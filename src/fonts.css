@@ -1,0 +1,6 @@
+/* Self-hosted so the app keeps its look offline (Google Fonts can't be cached by the SW). */
+@import "@fontsource/big-shoulders-display/latin-600";
+@import "@fontsource/big-shoulders-display/latin-700";
+@import "@fontsource/big-shoulders-display/latin-800";
+@import "@fontsource/big-shoulders-display/latin-900";
+@import "@fontsource-variable/inter";

@@ -16,6 +16,8 @@ const opts = {
   minify: true,
   target: ["safari15", "chrome100"],
   jsx: "transform",
+  loader: { ".woff": "file", ".woff2": "file" },
+  assetNames: "fonts/[name]-[hash]",
   define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "info",
 };

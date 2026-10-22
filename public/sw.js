@@ -3,11 +3,12 @@
 // with no signal), while a fresh copy is fetched in the background whenever you're
 // online — so a new deploy is picked up on the next launch or two, with no need to
 // touch this file each release.
-const CACHE = "eos-v3";
+const CACHE = "eos-v4";
 const ASSETS = [
   "./",
   "./index.html",
   "./app.js",
+  "./app.css",
   "./manifest.webmanifest",
   "./icon-180.png",
   "./icon-192.png",
