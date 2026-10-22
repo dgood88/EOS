@@ -1467,34 +1467,33 @@ function MatchdayView({ list, onOpen }) {
 }
 
 /* ============================== BEER TAB ============================== */
-/* Pints v Points. Both sides come from the same set of games — league fixtures you were
-   actually at — so it's a fair fight rather than a whole season of pints against a
-   handful of points. Built to read well whichever bar ends up on top. */
-function PintsVsPoints({ list }) {
-  const games = list.filter((f) => scannedIn(f) && f.competition === "Premier League" && !/cup/i.test(f.opposition || ""));
-  const played = games.filter((f) => f.result);
-  const points = played.reduce((a, f) => a + (f.result === "W" ? 3 : f.result === "D" ? 1 : 0), 0);
+/* Pints v Goals. Both bars come from exactly the same games — competitive games you were
+   at AND logged pints for — so a half-logged season can't flatter either side. Goals rather
+   than points: they work for cup ties too, and land on a similar scale to pints. */
+function PintsVsGoals({ list }) {
+  const atGames = list.filter((f) => scannedIn(f) && countsToRecord(f) && f.result);
+  const games = atGames.filter((f) => fxBeers(f).length > 0);
   const pints = games.reduce((a, f) => a + fxBeers(f).reduce((x, b) => x + (b.qty || 0), 0), 0);
-  const logged = games.filter((f) => fxBeers(f).length > 0).length;
-  if (!pints && !played.length) return null;
+  const goals = games.reduce((a, f) => a + (chelseaGoals(f) || 0), 0);
+  const unlogged = atGames.length - games.length;
+  if (!games.length) return null;
 
   const H = 140;
-  const max = Math.max(pints, points, 1);
-  const ratio = points ? pints / points : null;
-  const verdict = !points && pints ? `${pints} pints, not a single point. Chin up.`
-    : ratio == null ? "No points on the board yet."
-    : pints > points ? `${ratio.toFixed(1)} pints per point. The Guinness is well clear.`
-    : pints === points ? "Neck and neck. Perfectly balanced, as all things should be."
-    : `${ratio.toFixed(2)} pints per point — the football's ahead, for now.`;
+  const max = Math.max(pints, goals, 1);
+  const verdict = !goals ? `${pints} pints, not a single goal. Chin up.`
+    : pints / goals >= 1.5 ? `${(pints / goals).toFixed(1)} pints per goal. The Guinness is well clear.`
+    : pints > goals ? `${(pints / goals).toFixed(1)} pints per goal. The Guinness just edges it.`
+    : pints === goals ? "A pint a goal. Perfectly balanced, as all things should be."
+    : `${(goals / pints).toFixed(1)} goals per pint — the football's ahead, for now.`;
 
   return (
     <div className="pvp">
       <div className="pvp-head">
-        <span className="font-disp">Pints v Points</span>
-        <span className="pvp-sub">league games you were at</span>
+        <span className="font-disp">Pints v Goals</span>
+        <span className="pvp-sub">games you were at and logged pints for</span>
       </div>
       <div className="pvp-chart">
-        {[{ k: "pints", v: pints, lbl: "Pints" }, { k: "points", v: points, lbl: "Points" }].map((c) => (
+        {[{ k: "pints", v: pints, lbl: "Pints" }, { k: "points", v: goals, lbl: "Goals" }].map((c) => (
           <div key={c.k} className="pvp-col">
             <span className="pvp-val font-mono">{c.v}</span>
             <div className={`pvp-bar ${c.k}`} style={{ height: Math.max(4, Math.round((c.v / max) * H)) + "px" }} />
@@ -1502,10 +1501,11 @@ function PintsVsPoints({ list }) {
           </div>
         ))}
       </div>
-      <div className={`pvp-verdict ${pints > points ? "beer" : ""}`}>{verdict}</div>
-      {logged < games.length && (
-        <div className="pvp-caveat">Pints logged for {logged} of your {games.length} league game{games.length === 1 ? "" : "s"} — the bar only grows as you log them.</div>
-      )}
+      <div className={`pvp-verdict ${pints > goals ? "beer" : ""}`}>{verdict}</div>
+      <div className="pvp-caveat">
+        Across {games.length} game{games.length === 1 ? "" : "s"} · {(pints / games.length).toFixed(1)} pints and {(goals / games.length).toFixed(1)} goals a game.
+        {unlogged > 0 ? ` Log pints for the other ${unlogged} game${unlogged === 1 ? "" : "s"} you were at and ${unlogged === 1 ? "it joins" : "they join"} in.` : ""}
+      </div>
     </div>
   );
 }
@@ -1570,7 +1570,7 @@ function BeerView({ list, season, onOpen }) {
         <div className="split-row"><span className="split-k"><i className="dot blue" />Pints inside grounds</span><span className="font-disp">{groundPints}</span><span className="font-disp gold" aria-label="Ground spend">{money(groundSpend)}</span></div>
       </div>
 
-      <PintsVsPoints list={list} />
+      <PintsVsGoals list={list} />
 
       {topBeers.length > 0 && (
         <div className="top3">
@@ -1700,12 +1700,14 @@ function StatsView({ list, season, settings, setSettings }) {
   const leagueOrder = list.filter((f) => f.competition === "Premier League" && f.opposition && f.date).sort((a, b) => a.date < b.date ? -1 : 1);
   const gameNo = {}; leagueOrder.forEach((f, i) => (gameNo[f.id] = i + 1));
   const pointsAtSale = (f) => f.saleDate ? lpStart + cupBonus + list.reduce((a, g) => a + ((g.date && g.date < f.saleDate && earnsLP(g)) ? (g.lps || 0) : 0), 0) : lpTotal;
-  const loyaltySales = list.filter((f) => f.lpRequired != null || f.allocation != null || f.saleDate)
+  // Only games actually sold on loyalty points — i.e. ones with a Batch 1 cut-off logged.
+  // An allocation or sale date on its own doesn't put a game in here.
+  const loyaltySales = list.filter(hasCutoff)
     .sort((a, b) => ((a.saleDate || a.date || "9999") < (b.saleDate || b.date || "9999") ? -1 : 1));
   const todayISO = new Date().toISOString().slice(0, 10);
   // Where the points actually get you. Ranked by how tough the cut-off is rather than by
   // the calendar, so the headline is "what can I get into" not "whatever's next up".
-  const withReq = list.filter((f) => f.lpRequired != null);
+  const withReq = list.filter(hasCutoff);
   const cleared = withReq.filter((f) => lpTotal >= f.lpRequired).sort((a, b) => b.lpRequired - a.lpRequired);
   const missedOut = withReq.filter((f) => lpTotal < f.lpRequired).sort((a, b) => a.lpRequired - b.lpRequired);
   const toughestCleared = cleared[0];
@@ -1799,7 +1801,7 @@ function StatsView({ list, season, settings, setSettings }) {
       {/* LOYALTY TICKET SALES */}
       <SectionTitle small>Loyalty ticket sales</SectionTitle>
       {loyaltySales.length === 0 ? (
-        <div className="hint-card"><span className="hint-ic" aria-hidden><Ticket size={17} /></span><span>On any away game, add its Batch 1 points, allocation and sale date — each shows here with a tick if you'd have had the points at that sale date.</span></div>
+        <div className="hint-card"><span className="hint-ic" aria-hidden><Ticket size={17} /></span><span>Add a Batch 1 points cut-off to any game sold on loyalty points and it shows here, with a tick if you'd have had the points by its sale date.</span></div>
       ) : (
         <div className="sale-list">
           {loyaltySales.map((f) => <SaleRow key={f.id} f={f} gno={gameNo[f.id]} pas={pointsAtSale(f)} lpTotal={lpTotal} />)}
@@ -1870,6 +1872,7 @@ function StatsView({ list, season, settings, setSettings }) {
     </div>
   );
 }
+function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Number(f.lpRequired) > 0; }
 /* Tap to open. The summary line wraps rather than truncating, and the full breakdown —
    allocation, cut-off, what you'd have had on the day — lives inside. */
 function SaleRow({ f, gno, pas, lpTotal }) {
