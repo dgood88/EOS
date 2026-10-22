@@ -2832,7 +2832,7 @@ function RoostSync({ fixtures }) {
         <span className="sync-title font-disp">The Roost</span>
         <span className={`sync-state ${signedIn ? (st.error ? "warn" : "ok") : ""}`}>{user === undefined ? "…" : signedIn ? (st.error ? "Not synced" : "Synced") : "Off"}</span>
       </div>
-      <div className="sync-line">Sends your upcoming fixtures and whether you're going, so The Roost's calendar can show the games you're <b>Going</b> to and the ones you <b>Want to go</b> to — that's all your partner sees. Results, journals, pints and everything else stay on this phone, and EOS works the same whether this is on or off.</div>
+      <div className="sync-line">Sends your upcoming fixtures and whether you're going, so The Roost's calendar can show the games you're <b>Going</b> to — that's all your partner sees. Results, journals, pints and everything else stay on this phone, and EOS works the same whether this is on or off.</div>
       {signedIn ? (
         <>
           <div className="sync-meta">Signed in as {user.email}{when ? ` · last synced ${when}` : ""}{st.count != null && when ? ` · ${st.count} upcoming` : ""}</div>
