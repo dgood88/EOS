@@ -18,7 +18,13 @@ const opts = {
   jsx: "transform",
   loader: { ".woff": "file", ".woff2": "file" },
   assetNames: "fonts/[name]-[hash]",
-  define: { "process.env.NODE_ENV": '"production"' },
+  // Supabase project + public anon key for the Roost sync. Set these as Netlify
+  // environment variables; without them the sync panel simply doesn't appear.
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    "process.env.EOS_SUPABASE_URL": JSON.stringify(process.env.EOS_SUPABASE_URL || ""),
+    "process.env.EOS_SUPABASE_ANON_KEY": JSON.stringify(process.env.EOS_SUPABASE_ANON_KEY || ""),
+  },
   logLevel: "info",
 };
 

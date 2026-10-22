@@ -796,3 +796,20 @@ button.hero:active{transform:scale(.99);} button.hero{transition:transform .15s 
 .hdr-row > .relative{flex:none;}
 .hero-tile:first-child .hero-l{white-space:normal;line-height:1.3;}
 .chips{-webkit-mask-image:linear-gradient(to right,#000 85%,transparent);mask-image:linear-gradient(to right,#000 85%,transparent);padding-right:24px;}
+
+/* Roost sync panel (settings) */
+.sync-card{background:var(--card-2);border:1px solid var(--line-2);border-radius:var(--r-md);padding:14px;margin:4px 0 18px;display:flex;flex-direction:column;gap:10px;}
+.sync-head{display:flex;align-items:center;justify-content:space-between;}
+.sync-title{font-size:22px;text-transform:uppercase;letter-spacing:.06em;}
+.sync-state{font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;background:var(--line);color:var(--muted);}
+.sync-state.ok{background:rgba(52,195,143,.16);color:var(--win);} .sync-state.warn{background:rgba(242,166,90,.16);color:var(--orange);}
+.sync-line{font-size:13px;line-height:1.5;color:var(--ink-2);} .sync-line b{color:var(--ink);}
+.sync-meta{font-size:12px;color:var(--muted);line-height:1.45;}
+.sync-err{font-size:12.5px;color:var(--orange);line-height:1.45;}
+.sync-form{display:flex;flex-direction:column;gap:6px;}
+.sync-form .lbl{margin:6px 0 0;}
+.sync-actions{display:flex;gap:8px;}
+.data-btn.primary{justify-content:center;background:var(--gold);border-color:var(--gold);color:var(--bg);margin:6px 0 0;}
+.data-btn.primary:disabled{opacity:.5;}
+.data-btn.slim{min-height:42px;margin:0;justify-content:center;flex:1;font-size:14px;}
+.data-btn.ghost{background:transparent;}
