@@ -11,6 +11,8 @@
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
+const EOS_PUBLIC_KEY = "BGG-XJrHIrK2m0FlQwmjDfl1J6kvgy-XqndS0yFgONT_HrkUHrW98cD1JnGnYyjefedP1LCZJO9l1KHMHB_pf2k";
+
 interface Due {
   user_id: string;
   fixture_id: string;
@@ -55,12 +57,26 @@ export function message(d: Due, now = new Date()) {
 export default async () => {
   const url = process.env.EOS_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const vapidPublic = process.env.EOS_VAPID_PUBLIC_KEY;
-  const vapidPrivate = process.env.EOS_VAPID_PRIVATE_KEY;
-  if (!url || !serviceKey || !vapidPublic || !vapidPrivate) {
+  // Tidy anything pasting may have added (spaces, quotes, the label itself).
+  const clean = (v?: string) => String(v || "").replace(/^\s*EOS_VAPID_(PUBLIC|PRIVATE)_KEY\s*[=:]?/i, "").replace(/["'\s]/g, "");
+  const len = (k: string) => { try { return Buffer.from(k, "base64url").length; } catch { return 0; } };
+  let vapidPublic = clean(process.env.EOS_VAPID_PUBLIC_KEY);
+  if (len(vapidPublic) !== 65) vapidPublic = EOS_PUBLIC_KEY; // public by design; same one the app uses
+  const vapidPrivate = clean(process.env.EOS_VAPID_PRIVATE_KEY);
+  if (!url || !serviceKey || !vapidPrivate) {
     return new Response(JSON.stringify({ skipped: "not configured" }), { headers: { "content-type": "application/json" } });
   }
-  webpush.setVapidDetails(process.env.URL || "https://only-place-every-other-saturday.netlify.app", vapidPublic, vapidPrivate);
+  if (len(vapidPrivate) !== 32) {
+    const why = len(vapidPrivate) === 65 ? "it looks like the PUBLIC key was pasted there" : `it decodes to ${len(vapidPrivate)} bytes, not 32`;
+    console.error(`EOS_VAPID_PRIVATE_KEY is wrong: ${why}. It should be 43 characters.`);
+    return new Response(JSON.stringify({ error: "bad private key", why }), { status: 500 });
+  }
+  try {
+    webpush.setVapidDetails(process.env.URL || "https://only-place-every-other-saturday.netlify.app", vapidPublic, vapidPrivate);
+  } catch (e) {
+    console.error("VAPID keys rejected:", (e as Error).message);
+    return new Response(JSON.stringify({ error: "keys rejected" }), { status: 500 });
+  }
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
   const out = { due: 0, sent: 0, pruned: 0, failed: 0 };

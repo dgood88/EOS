@@ -142,8 +142,19 @@ export function syncNow(fixtures) {
    Push notifications (the nudges). The phone subscribes with EOS's public key;
    the scheduled job on the server decides when to send.
    ===================================================================== */
-const VAPID = process.env.EOS_VAPID_PUBLIC_KEY || "";
-export const pushConfigured = syncConfigured && Boolean(VAPID);
+// EOS's push public key. It's public by design (it ships inside every web app that uses
+// push), so it lives here as well as in Netlify: if the Netlify value is mangled in pasting
+// — a stray space, quotes, the label copied in — the app falls back to this one.
+const EOS_PUBLIC_KEY = "BGG-XJrHIrK2m0FlQwmjDfl1J6kvgy-XqndS0yFgONT_HrkUHrW98cD1JnGnYyjefedP1LCZJO9l1KHMHB_pf2k";
+export function cleanKey(raw) {
+  return String(raw || "").replace(/^\s*EOS_VAPID_(PUBLIC|PRIVATE)_KEY\s*[=:]?/i, "").replace(/["'\s]/g, "");
+}
+function validPublicKey(k) {
+  try { const b = keyBytes(k); return b.length === 65 && b[0] === 4; } catch (e) { return false; }
+}
+const FROM_ENV = cleanKey(process.env.EOS_VAPID_PUBLIC_KEY);
+const VAPID = validPublicKey(FROM_ENV) ? FROM_ENV : EOS_PUBLIC_KEY;
+export const pushConfigured = syncConfigured;
 
 export function isInstalled() {
   try { return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch (e) { return false; }
