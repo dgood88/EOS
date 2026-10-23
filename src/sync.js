@@ -78,16 +78,23 @@ export async function signOut() {
 }
 
 /* ---- push ---- */
-// Upcoming only: anything dated today or later, plus undated games with no result yet.
+// Upcoming games plus the last few days (so the "After the whistle" nudge knows about the
+// game you've just been to), and undated games with no result yet. For nudges the server
+// only gets two yes/no facts: is there a prediction, and has After the whistle been written.
 function upcoming(fixtures) {
-  const today = new Date().toISOString().slice(0, 10);
+  const from = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
   return (fixtures || [])
-    .filter((f) => f && f.id && (f.date ? f.date >= today : !f.result))
-    .map((f) => ({
-      id: f.id, season: f.season || "", date: f.date || null, kickoff: f.kickoff || "",
-      opposition: f.opposition || "", venue: f.venue || "", competition: f.competition || "",
-      attending: f.attending || "none", dateConfirmed: !!f.dateConfirmed,
-    }));
+    .filter((f) => f && f.id && (f.date ? f.date >= from : !f.result))
+    .map((f) => {
+      const j = f.journal || {};
+      return {
+        id: f.id, season: f.season || "", date: f.date || null, kickoff: f.kickoff || "",
+        opposition: f.opposition || "", venue: f.venue || "", competition: f.competition || "",
+        attending: f.attending || "none", dateConfirmed: !!f.dateConfirmed,
+        hasPrediction: !!String(f.prediction || "").trim(),
+        postDone: !!(String(j.matchFacts || "").trim() || String(j.postNote || "").trim()),
+      };
+    });
 }
 
 let timer = null;
@@ -129,4 +136,83 @@ export function syncNow(fixtures) {
   if (!syncConfigured) return Promise.resolve();
   clearTimeout(timer);
   return pushNow(fixtures, true).catch(() => {});
+}
+
+/* =====================================================================
+   Push notifications (the nudges). The phone subscribes with EOS's public key;
+   the scheduled job on the server decides when to send.
+   ===================================================================== */
+const VAPID = process.env.EOS_VAPID_PUBLIC_KEY || "";
+export const pushConfigured = syncConfigured && Boolean(VAPID);
+
+export function isInstalled() {
+  try { return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch (e) { return false; }
+}
+function pushSupported() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+
+/** 'needs-install' | 'unsupported' | 'blocked' | 'off' | 'on' */
+export async function pushState() {
+  if (!pushSupported()) return isInstalled() ? "unsupported" : "needs-install";
+  if (Notification.permission === "denied") return "blocked";
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    return sub ? "on" : "off";
+  } catch (e) { return "off"; }
+}
+
+function keyBytes(b64) {
+  const p = (b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(p); const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+/** Has to run straight from a tap (iOS rule). */
+export async function enablePush() {
+  const c = sb(); if (!c || !VAPID) throw new Error("Notifications aren't set up on this site yet.");
+  const u = await currentUser();
+  if (!u || u.needsCode) throw new Error("Sign in to The Roost sync first — the nudges use the same login.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Notifications weren't allowed. You can change that in the iPhone's Settings → Notifications.");
+  const reg = await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID) }));
+  const j = sub.toJSON();
+  const { error } = await c.rpc("eos_save_push_subscription", { p_endpoint: sub.endpoint, p_p256dh: j.keys && j.keys.p256dh, p_auth: j.keys && j.keys.auth });
+  if (error) throw new Error(error.message);
+}
+
+export async function disablePush() {
+  const c = sb();
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    if (sub) {
+      if (c) { try { await c.rpc("eos_delete_push_subscription", { p_endpoint: sub.endpoint }); } catch (e) {} }
+      await sub.unsubscribe();
+    }
+  } catch (e) {}
+}
+
+export async function getNudgePrefs() {
+  const c = sb(); if (!c) return null;
+  try {
+    const { data, error } = await c.rpc("eos_get_notify_prefs");
+    if (error || !data || !data.length) return null;
+    return { prediction: !!data[0].prediction, afterWhistle: !!data[0].after_whistle };
+  } catch (e) { return null; }
+}
+export async function setNudgePrefs({ prediction, afterWhistle }) {
+  const c = sb(); if (!c) return;
+  const { error } = await c.rpc("eos_set_notify_prefs", { p_prediction: !!prediction, p_after_whistle: !!afterWhistle });
+  if (error) throw new Error(error.message);
+}
+
+/** A copy of an in-app moment (a milestone) in the notification centre, if allowed. */
+export async function localNotify(title, body, tag) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.showNotification(title, { body, tag, icon: "./icon-192.png", badge: "./icon-192.png", data: { url: "./?tab=wrapped" } });
+  } catch (e) {}
 }

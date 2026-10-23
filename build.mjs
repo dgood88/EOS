@@ -24,6 +24,7 @@ const opts = {
     "process.env.NODE_ENV": '"production"',
     "process.env.EOS_SUPABASE_URL": JSON.stringify(process.env.EOS_SUPABASE_URL || ""),
     "process.env.EOS_SUPABASE_ANON_KEY": JSON.stringify(process.env.EOS_SUPABASE_ANON_KEY || ""),
+    "process.env.EOS_VAPID_PUBLIC_KEY": JSON.stringify(process.env.EOS_VAPID_PUBLIC_KEY || ""),
   },
   logLevel: "info",
 };

@@ -3,7 +3,7 @@
 // with no signal), while a fresh copy is fetched in the background whenever you're
 // online — so a new deploy is picked up on the next launch or two, with no need to
 // touch this file each release.
-const CACHE = "eos-v4";
+const CACHE = "eos-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -42,4 +42,29 @@ self.addEventListener("fetch", (e) => {
       })
     )
   );
+});
+
+// ---- Notifications (EOS nudges) ----
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Every Other Saturday", {
+    body: d.body || "",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    tag: d.tag || undefined,
+    data: { url: d.url || "./" },
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) {
+      if ("focus" in w) { w.postMessage({ type: "eos-open", url }); return w.focus(); }
+    }
+    return self.clients.openWindow(url);
+  })());
 });
