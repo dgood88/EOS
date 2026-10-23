@@ -43,8 +43,9 @@ Dom's Chelsea matchday log. A single-page React app, bundled with esbuild into o
 - **Milestones** are worked out in the app (`seasonMilestones`). A new one shows a toast and,
   if allowed, a copy in the notification centre. Never rename a milestone key.
 - Netlify variables:
-  - both sites: `EOS_VAPID_PUBLIC_KEY` (public; the app uses it to subscribe);
   - live site only: `EOS_VAPID_PRIVATE_KEY` and `SUPABASE_SERVICE_ROLE_KEY` (both secret).
+  - The public half of the push key is in the code (`src/sync.js`, `eos-nudges.mts`) — it's
+    public by design. If the pair is ever replaced, update both places and the secret.
     Without these the scheduled job does nothing, which keeps the test site quiet.
 
 ## Releasing

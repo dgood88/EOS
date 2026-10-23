@@ -143,17 +143,9 @@ export function syncNow(fixtures) {
    the scheduled job on the server decides when to send.
    ===================================================================== */
 // EOS's push public key. It's public by design (it ships inside every web app that uses
-// push), so it lives here as well as in Netlify: if the Netlify value is mangled in pasting
-// — a stray space, quotes, the label copied in — the app falls back to this one.
-const EOS_PUBLIC_KEY = "BGG-XJrHIrK2m0FlQwmjDfl1J6kvgy-XqndS0yFgONT_HrkUHrW98cD1JnGnYyjefedP1LCZJO9l1KHMHB_pf2k";
-export function cleanKey(raw) {
-  return String(raw || "").replace(/^\s*EOS_VAPID_(PUBLIC|PRIVATE)_KEY\s*[=:]?/i, "").replace(/["'\s]/g, "");
-}
-function validPublicKey(k) {
-  try { const b = keyBytes(k); return b.length === 65 && b[0] === 4; } catch (e) { return false; }
-}
-const FROM_ENV = cleanKey(process.env.EOS_VAPID_PUBLIC_KEY);
-const VAPID = validPublicKey(FROM_ENV) ? FROM_ENV : EOS_PUBLIC_KEY;
+// push), so it lives here in the code rather than in a Netlify setting that can be mis-pasted.
+// Its private half is the EOS_VAPID_PRIVATE_KEY secret on the live site only.
+const VAPID = "BCyMfuXNSOhct52bVNvSHQFnnwhyazemhUxgo8iFszfS0dnmvNfFRIqXSwsXmxvU_H3R0Bl19lK0J0dUsMwgWv4";
 export const pushConfigured = syncConfigured;
 
 export function isInstalled() {

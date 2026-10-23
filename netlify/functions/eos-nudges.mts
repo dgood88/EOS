@@ -7,11 +7,11 @@
 //
 // Needs these Netlify environment variables (the job quietly does nothing without them,
 // which is what keeps it switched off on the test site):
-//   EOS_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, EOS_VAPID_PUBLIC_KEY, EOS_VAPID_PRIVATE_KEY
+//   EOS_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, EOS_VAPID_PRIVATE_KEY
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
-const EOS_PUBLIC_KEY = "BGG-XJrHIrK2m0FlQwmjDfl1J6kvgy-XqndS0yFgONT_HrkUHrW98cD1JnGnYyjefedP1LCZJO9l1KHMHB_pf2k";
+const EOS_PUBLIC_KEY = "BCyMfuXNSOhct52bVNvSHQFnnwhyazemhUxgo8iFszfS0dnmvNfFRIqXSwsXmxvU_H3R0Bl19lK0J0dUsMwgWv4"; // public half; private half is EOS_VAPID_PRIVATE_KEY
 
 interface Due {
   user_id: string;
@@ -60,8 +60,7 @@ export default async () => {
   // Tidy anything pasting may have added (spaces, quotes, the label itself).
   const clean = (v?: string) => String(v || "").replace(/^\s*EOS_VAPID_(PUBLIC|PRIVATE)_KEY\s*[=:]?/i, "").replace(/["'\s]/g, "");
   const len = (k: string) => { try { return Buffer.from(k, "base64url").length; } catch { return 0; } };
-  let vapidPublic = clean(process.env.EOS_VAPID_PUBLIC_KEY);
-  if (len(vapidPublic) !== 65) vapidPublic = EOS_PUBLIC_KEY; // public by design; same one the app uses
+  const vapidPublic = EOS_PUBLIC_KEY; // the same key the app subscribes with
   const vapidPrivate = clean(process.env.EOS_VAPID_PRIVATE_KEY);
   if (!url || !serviceKey || !vapidPrivate) {
     return new Response(JSON.stringify({ skipped: "not configured" }), { headers: { "content-type": "application/json" } });
