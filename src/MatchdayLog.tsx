@@ -13,7 +13,7 @@ const SEED = /*SEED_START*/[{"id":"h1","season":"21-22","date":"2021-08-11","dat
 
 /* ============================== STORAGE ============================== */
 const KEY = "cfc:matchday:v2";
-const APP_VERSION = "2.5 (22 Oct 2026)";
+const APP_VERSION = "2.6 (23 Oct 2026)";
 const SEED_VERSION = 10;
 // Confirmed Aug–Sep 2026 TV selections. Applied once (via the tvPatch2627 flag) so an
 // already-published copy gets the new dates/kick-offs/broadcasters without wiping any

@@ -1,7 +1,7 @@
 {
   "name": "every-other-saturday",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Every Other Saturday: Dom's Chelsea matchday log",
   "scripts": {
     "build": "node build.mjs",
