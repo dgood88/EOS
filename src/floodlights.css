@@ -835,3 +835,8 @@ button.hero:active{transform:scale(.99);} button.hero{transition:transform .15s 
 .toast-txt span{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);}
 .toast-txt b{font-family:var(--disp);font-size:22px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;line-height:1.05;}
 @keyframes toastIn{from{transform:translateY(-120%) scale(.9);opacity:0;}to{transform:none;opacity:1;}}
+
+/* "Unsure": a grey ring, quieter than Want to go's gold one */
+.att.t-unsure .att-dot{background:none;border:2px solid var(--faint);}
+.hero-status.t-unsure{background:rgba(159,176,209,.16);color:var(--ink-2);}
+.pill-unsure{background:rgba(159,176,209,.12);color:var(--ink-2);}

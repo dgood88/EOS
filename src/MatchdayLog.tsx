@@ -172,6 +172,7 @@ const TV_DATES = [
 // enough. Old "comp"/"unavailable" statuses are migrated into these on load.
 const ATT = {
   none: { past: "Didn't go", future: "Want to go", tone: "amber" },
+  unsure: { past: "Didn't go", future: "Unsure", tone: "unsure" },
   going: { past: "Had a ticket", future: "Going", tone: "blue" },
   went: { past: "Was there", future: "Was there", tone: "win" },
   sourced: { past: "Sourced", future: "Sourcing", tone: "muted" },
@@ -436,6 +437,19 @@ function applyFixes(list) {
    normalised by the lpScan2627 migration; a fresh seed (or a "re-import original history")
    needs the same treatment, otherwise every historic game reads as a ticket held rather
    than a game attended — and nothing counts. Only ever applied to raw seed data. */
+/* 24 Oct 2026, one-off: for the rest of 26/27, away league games outside London move from
+   "Want to go" to the new "Unsure". London aways and every cup tie stay "Want to go"; home
+   games and anything already set to something else (Going, Sourcing, Not going…) are left. */
+function applyUnsure2627(list) {
+  const today = new Date().toISOString().slice(0, 10);
+  return list.map((f) => {
+    if (f.season !== "26-27" || f.result || f.attending !== "none") return f;
+    if (f.date && f.date < today) return f;
+    if (f.venue !== "A" || f.competition !== "Premier League") return f;
+    if (LONDON_CLUBS.test(f.opposition || "")) return f;
+    return { ...f, attending: "unsure" };
+  });
+}
 function normaliseAttendance(list) {
   const today = new Date().toISOString().slice(0, 10);
   return list.map((f) => {
@@ -676,6 +690,11 @@ export default function App() {
           st = { ...st, compFix1: true };
           changed = true;
         }
+        if (!st.unsure2627) {
+          fx = applyUnsure2627(fx);
+          st = { ...st, unsure2627: true };
+          changed = true;
+        }
         if (!st.lpTargets) st.lpTargets = {};
         if (st.lpTargets["26-27"] == null) { st = { ...st, lpTargets: { ...st.lpTargets, "26-27": 140 } }; changed = true; }
         // Only seed these when the key has never been set. Checking for an empty list
@@ -686,13 +705,13 @@ export default function App() {
         setSeason(seasons[seasons.length - 1]);
         if (changed) await storeSet(KEY, { fixtures: fx, settings: st });
       } else {
-        const seeded = normaliseAttendance(applyFixes(SEED.map(hydrate)));
+        const seeded = applyUnsure2627(normaliseAttendance(applyFixes(SEED.map(hydrate))));
         const seasons = [...new Set(seeded.map((f) => f.season))].sort();
         const st = {
           lpTargets: {}, title: "EVERY OTHER SATURDAY", seedVersion: SEED_VERSION,
           lpStart: { "24-25": 47, "25-26": 47, "26-27": 0 },
           stCost: { "24-25": 810, "25-26": 880, "26-27": 880 },
-          batch1: {}, seasonPerf: { ...DEFAULT_PERF }, compFix1: true, lpScan2627: true, lpPolicy2627: true, tvPatch2627: true, groundSeed1: true,
+          batch1: {}, seasonPerf: { ...DEFAULT_PERF }, compFix1: true, lpScan2627: true, lpPolicy2627: true, tvPatch2627: true, groundSeed1: true, unsure2627: true,
           regularPubs: DEFAULT_PUBS, regularMates: DEFAULT_MATES,
           regularBeers: DEFAULT_BEERS, regularGroundBeers: DEFAULT_GROUND_BEERS,
         };
