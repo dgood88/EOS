@@ -407,6 +407,7 @@ function seasonReviewMD(list, season, settings) {
     if (f.score || f.result) L.push(`- Result: ${f.score || "?"}${f.result ? ` (${f.result})` : ""}`);
     if (f.prediction) L.push(`- Dom's prediction: ${f.prediction}`);
     if (f.rating) L.push(`- Day-out rating: ${f.rating}/10`);
+    if (f.venue === "H" && f.turnedAround === true) L.push(`- Ends: ${f.opposition} turned Chelsea around, so they attacked the Matthew Harding Lower in the first half`);
     const j = f.journal || null;
     if (j) {
       const who = j.solo ? "Solo" : (j.withWho ? `With ${j.withWho}` : "");
@@ -688,6 +689,12 @@ export default function App() {
         if (!st.compFix1) {
           fx = applyFixes(fx);
           st = { ...st, compFix1: true };
+          changed = true;
+        }
+        // one-off: tracking "turned us around" starts with Spurs at home on 24 Oct 2026, who did.
+        if (!st.mhlSpurs2627) {
+          fx = fx.map((f) => (f.season === "26-27" && f.venue === "H" && f.date === "2026-10-24" && /spurs|tottenham/i.test(f.opposition || "") && f.turnedAround == null) ? { ...f, turnedAround: true } : f);
+          st = { ...st, mhlSpurs2627: true };
           changed = true;
         }
         if (!st.unsure2627) {
@@ -1504,6 +1511,7 @@ function JournalCard({ f, onOpen }) {
           {j.matchFacts && <div className="jr-post"><span className="jr-post-lbl">On the pitch</span>{j.matchFacts}</div>}
           {j.postNote && <div className="jr-post"><span className="jr-post-lbl">After the whistle</span>{j.postNote}</div>}
           {j.lifeNote && <div className="jr-post"><span className="jr-post-lbl">Beyond the football</span>{j.lifeNote}</div>}
+          {f.turnedAround === true && f.venue === "H" ? <div className="jr-with">They turned us around — MHL first half.</div> : null}
           {f.rating ? <div className="jr-rating">★ {f.rating}/10 day out</div> : null}
         </div>
       )}
@@ -1936,6 +1944,8 @@ function StatsView({ list, season, settings, setSettings }) {
       </div>
       {(happy.length > 0 || bogey.length > 0) && <div className="opp-key">Won – drawn – lost, teams you've seen twice or more</div>}
 
+      <TurnedAround list={list} season={season} />
+
       {/* SEASON SETUP — tucked away, one-off entry per season */}
       <button className="setup-toggle" onClick={() => setShowSetup((s) => !s)}>
         <Settings size={13} /> Season setup
@@ -1957,6 +1967,51 @@ function StatsView({ list, season, settings, setSettings }) {
   );
 }
 function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Number(f.lpRequired) > 0; }
+/* Home games where the visitors won the toss and turned us around, so Chelsea attacked the
+   Matthew Harding Lower in the first half. Marked in After the whistle; tracked from Spurs at
+   home on 24 Oct 2026. Only games marked yes or no count; unmarked ones are left out. */
+function TurnedAround({ list, season }) {
+  const home = list.filter((f) => f.venue === "H" && countsToRecord(f)).sort((a, b) => ((a.date || "") < (b.date || "") ? -1 : 1));
+  const turned = home.filter((f) => f.turnedAround === true);
+  const kept = home.filter((f) => f.turnedAround === false && f.result);
+  if (!turned.length && !kept.length && season < "26-27") return null;
+  const rec = (rows) => { const r = { W: 0, D: 0, L: 0 }; rows.forEach((f) => { if (r[f.result] != null) r[f.result]++; }); return r; };
+  const t = rec(turned), k = rec(kept);
+  const played = t.W + t.D + t.L;
+  return (
+    <>
+      <div className="sec-row"><SectionTitle>Turned us around</SectionTitle><span className="sec-aside">MHL first half</span></div>
+      {!turned.length ? (
+        <div className="hint-card"><span className="hint-ic" aria-hidden><RotateCcw size={17} /></span><span>Nobody's turned us around yet this season. On a home game, mark it in <b>After the whistle</b> and it shows up here with how we got on.</span></div>
+      ) : (
+        <div className="rec-card">
+          {played > 0 && (
+            <div className="rec-nums">
+              <div className="rec-num win"><span className="font-disp">{t.W}</span><span>Won</span></div>
+              <div className="rec-num draw"><span className="font-disp">{t.D}</span><span>Drawn</span></div>
+              <div className="rec-num loss"><span className="font-disp">{t.L}</span><span>Lost</span></div>
+            </div>
+          )}
+          {played > 0 && (
+            <div className="rec-bar" aria-label={`${t.W}W ${t.D}D ${t.L}L when turned around`}>
+              <div className="rec-seg win" style={{ flex: t.W || 0.01 }} /><div className="rec-seg draw" style={{ flex: t.D || 0.01 }} /><div className="rec-seg loss" style={{ flex: t.L || 0.01 }} />
+            </div>
+          )}
+          <div className={`ta-list ${played ? "" : "first"}`}>
+            {turned.map((f) => (
+              <div key={f.id} className="ta-row">
+                <span className="ta-opp">{f.opposition}</span>
+                <span className="ta-date">{fmtDate(f.date, f.dateText)}</span>
+                {f.result ? <span className="ta-res"><span className="font-disp">{f.score}</span><ResultPill r={f.result} /></span> : <span className="ta-tbc">result to come</span>}
+              </div>
+            ))}
+          </div>
+          {kept.length > 0 && <div className="ta-note">When we kept our usual ends: {k.W}W {k.D}D {k.L}L</div>}
+        </div>
+      )}
+    </>
+  );
+}
 /* Tap to open. The summary line wraps rather than truncating, and the full breakdown —
    allocation, cut-off, what you'd have had on the day — lives inside. */
 function SaleRow({ f, gno, pas, lpTotal }) {
@@ -2895,6 +2950,15 @@ function FixtureDetail({ fx, matchday, focus, onClose, onSave, onDelete, regular
             <div className="ed-grid">
               <div className="span2"><Field label={<span>What actually happened <span className="fld-hint">the goals, cards, turning point</span></span>}><AutoTextarea placeholder="Sánchez off after 5, attackers all hooked, gifted them the points…" value={j.matchFacts || ""} onChange={(e) => setJ({ matchFacts: e.target.value })} /></Field></div>
               <div className="span2"><Field label="After the final whistle"><AutoTextarea placeholder="The comedown / the glory…" value={j.postNote || ""} onChange={(e) => setJ({ postNote: e.target.value })} /></Field></div>
+              {d.venue === "H" && (
+                <div className="span2">
+                  <span className="lbl">Turned us around? <span className="fld-hint">made us attack the MHL first half</span></span>
+                  <div className="seg full">
+                    <button className={`seg-b ${d.turnedAround === true ? "on loss" : ""}`} onClick={() => set({ turnedAround: d.turnedAround === true ? null : true })}>Yes, MHL first half</button>
+                    <button className={`seg-b ${d.turnedAround === false ? "on blue" : ""}`} onClick={() => set({ turnedAround: d.turnedAround === false ? null : false })}>No, usual ends</button>
+                  </div>
+                </div>
+              )}
               <div className="span2">
                 <span className="lbl">Rate the day out</span>
                 <HalfStars value={d.rating || 0} onChange={(v) => set({ rating: v })} />
