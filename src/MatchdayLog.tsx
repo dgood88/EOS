@@ -2753,6 +2753,15 @@ function FixtureDetail({ fx, matchday, focus, onClose, onSave, onDelete, regular
     setD((s) => ({ ...s, score, result: derived != null ? derived : s.result }));
   }
   function onBase(v) { setBaseScore(v); recompose(v, decider, pens); }
+  // The scoreboard has a box per side (the iPhone number pad has no "-" key). Together they
+  // make exactly the same "2-1" score string as before, Chelsea first.
+  const [sc, setSc] = useState(() => { const p = parseScore(initBase); return p ? [String(p[0]), String(p[1])] : ["", ""]; });
+  function setGoals(i, raw) {
+    const v = String(raw).replace(/\D/g, "").slice(0, 2);
+    const next = i === 0 ? [v, sc[1]] : [sc[0], v];
+    setSc(next);
+    onBase(next[0] !== "" && next[1] !== "" ? `${next[0]}-${next[1]}` : "");
+  }
   function changeDecider(v) { const nv = decider === v ? "normal" : v; setDecider(nv); recompose(baseScore, nv, pens); }
   function changePens(v) { setPens(v); recompose(baseScore, decider, v); }
   function autoLP() { set({ lps: lpDefault(d.venue, d.competition, d.opposition) }); }
@@ -2780,7 +2789,11 @@ function FixtureDetail({ fx, matchday, focus, onClose, onSave, onDelete, regular
             <span className="hero-glow low" aria-hidden />
             <div className="sb-teams">
               <span className="sb-team font-disp">CHELSEA</span>
-              <input className="ed-score font-disp flip" placeholder="0-0" value={baseScore} onChange={(e) => onBase(e.target.value)} aria-label="Score, Chelsea first" inputMode="numeric" />
+              <div className="sb-score flip">
+                <input className="ed-score font-disp" placeholder="0" value={sc[0]} onChange={(e) => setGoals(0, e.target.value)} aria-label="Chelsea goals" inputMode="numeric" pattern="[0-9]*" maxLength={2} />
+                <span className="sb-dash" aria-hidden>–</span>
+                <input className="ed-score font-disp" placeholder="0" value={sc[1]} onChange={(e) => setGoals(1, e.target.value)} aria-label={`${d.opposition || "Opponent"} goals`} inputMode="numeric" pattern="[0-9]*" maxLength={2} />
+              </div>
               <input className="ed-opp font-disp" placeholder="Opponent" value={d.opposition} onChange={(e) => set({ opposition: e.target.value })} aria-label="Opponent" />
             </div>
             <div className="ed-score-row">
