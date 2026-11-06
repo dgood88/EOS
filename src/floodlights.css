@@ -857,3 +857,12 @@ button.hero:active{transform:scale(.99);} button.hero{transition:transform .15s 
 .sb-score{display:flex;align-items:center;gap:2px;}
 .sb-score .ed-score{width:58px;padding:4px 0;}
 .sb-dash{font-family:var(--disp);font-size:44px;font-weight:800;color:#4B5D86;line-height:1;}
+
+/* away ticket transfers (Stats) */
+.seat-count.warn{color:var(--orange);} .seat-count.bad{color:var(--loss);}
+.xfer-pips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin:10px 0 8px;}
+.xfer-pips span{height:8px;border-radius:4px;background:var(--line);}
+.xfer-pips span.on{background:var(--blue);} .xfer-pips span.on.warn{background:var(--orange);} .xfer-pips span.on.bad{background:var(--loss);}
+.xfer-list{display:flex;flex-direction:column;margin-bottom:8px;}
+.xfer-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-top:1px solid var(--line);}
+.xfer-row span:first-child{font-weight:600;}

@@ -934,6 +934,7 @@ export default function App() {
           fx={detail}
           matchday={matchdayMode}
           focus={detailFocus}
+          transfersUsed={fixtures.filter((f) => f.season === detail.season && f.id !== detail.id && isTransfer(f)).length}
           regulars={settings.regularPubs || DEFAULT_PUBS}
           onAddRegular={(n) => addRegular("regularPubs", DEFAULT_PUBS, n)}
           onRemoveRegular={(n) => dropRegular("regularPubs", DEFAULT_PUBS, n)}
@@ -1890,6 +1891,8 @@ function StatsView({ list, season, settings, setSettings }) {
         </div>
       )}
 
+      <TransferTally list={list} season={season} />
+
       {/* LOYALTY TICKET SALES */}
       <SectionTitle small>Loyalty ticket sales</SectionTitle>
       {loyaltySales.length === 0 ? (
@@ -1967,6 +1970,37 @@ function StatsView({ list, season, settings, setSettings }) {
   );
 }
 function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Number(f.lpRequired) > 0; }
+/* Away ticket transfers: the club allows a member to transfer away tickets to eligible
+   members up to 6 times a season. A transfer = an away (non-home) game marked Sourcing
+   with "Ticket transferred" ticked. Switching it off Sourcing stops it counting. */
+const TRANSFER_LIMIT = 6;
+function isTransfer(f) { return !!f.ticketTransferred && f.attending === "sourced" && f.venue !== "H"; }
+function TransferTally({ list, season }) {
+  const used = list.filter(isTransfer).sort((a, b) => ((a.date || "") < (b.date || "") ? -1 : 1));
+  if (!used.length && season < "26-27") return null;
+  const left = TRANSFER_LIMIT - used.length;
+  const tone = left <= 0 ? "bad" : left <= 2 ? "warn" : "";
+  return (
+    <div className="seat-card">
+      <div className="seat-head">
+        <span className="seat-lbl">Away ticket transfers</span>
+        <span className={`seat-count font-mono ${tone}`}>{used.length}<span className="seat-of">/{TRANSFER_LIMIT}</span></span>
+      </div>
+      <div className="xfer-pips" aria-hidden>{Array.from({ length: TRANSFER_LIMIT }, (_, i) => <span key={i} className={i < used.length ? `on ${tone}` : ""} />)}</div>
+      {used.length > 0 && (
+        <div className="xfer-list">
+          {used.map((f) => <div key={f.id} className="xfer-row"><span>{f.opposition}</span><span className="muted">{fmtDate(f.date, f.dateText)}{f.attendee ? ` · ${f.attendee}` : ""}</span></div>)}
+        </div>
+      )}
+      <div className="seat-note">{left <= 0
+        ? `All ${TRANSFER_LIMIT} used — no more away transfers this season.`
+        : used.length
+          ? `${left} left this season.`
+          : `None used yet. Mark an away game Sourcing and tick "Ticket transferred" to count it.`}</div>
+    </div>
+  );
+}
+
 /* Home games where the visitors won the toss and turned us around, so Chelsea attacked the
    Matthew Harding Lower in the first half. Marked in After the whistle; tracked from Spurs at
    home on 24 Oct 2026. Only games marked yes or no count; unmarked ones are left out. */
@@ -2720,7 +2754,7 @@ function PubCard({ pub, index, onChange, onRemove, regulars = [], onAddRegular, 
   );
 }
 
-function FixtureDetail({ fx, matchday, focus, onClose, onSave, onDelete, regulars = [], onAddRegular, onRemoveRegular, mates = [], onAddMate, onRemoveMate, beerNames = [], onAddBeerName, onRemoveBeerName, groundBeerNames = [], onAddGroundBeerName, onRemoveGroundBeerName }) {
+function FixtureDetail({ fx, matchday, focus, transfersUsed = 0, onClose, onSave, onDelete, regulars = [], onAddRegular, onRemoveRegular, mates = [], onAddMate, onRemoveMate, beerNames = [], onAddBeerName, onRemoveBeerName, groundBeerNames = [], onAddGroundBeerName, onRemoveGroundBeerName }) {
   const [d, setD] = useState(() => JSON.parse(JSON.stringify(fx)));
   // Opened from a nudge: land on the bit that needs doing.
   const predRef = useRef(null);
@@ -2866,6 +2900,15 @@ function FixtureDetail({ fx, matchday, focus, onClose, onSave, onDelete, regular
                 </div>
               </div>
               {(d.attending === "sourced") && <div className="span2"><Field label="Sourced for"><input className="inp" placeholder="Who's using the ticket" value={d.attendee} onChange={(e) => set({ attendee: e.target.value })} /></Field></div>}
+              {(d.attending === "sourced" && d.venue !== "H") && (
+                <div className="span2">
+                  <button className={`cup-toggle ${d.ticketTransferred ? "on" : ""}`} onClick={() => set({ ticketTransferred: !d.ticketTransferred })} role="checkbox" aria-checked={!!d.ticketTransferred}>
+                    <span className="cup-toggle-box">{d.ticketTransferred && <Check size={14} />}</span>
+                    <span className="cup-toggle-txt"><b>Ticket transferred</b> — counts towards the {TRANSFER_LIMIT} away transfers allowed a season. {transfersUsed + (d.ticketTransferred ? 1 : 0)} of {TRANSFER_LIMIT} used{transfersUsed + (d.ticketTransferred ? 1 : 0) >= TRANSFER_LIMIT ? " — that's the lot." : "."}</span>
+                  </button>
+                  {!d.ticketTransferred && transfersUsed >= TRANSFER_LIMIT && <div className="sync-err" style={{ marginTop: 6 }}>You've already used all {TRANSFER_LIMIT} transfers this season.</div>}
+                </div>
+              )}
               <Field label={<span>Points earned <button className="auto-btn" onClick={autoLP}>auto</button></span>}>
                 <input type="number" className="inp font-mono" value={d.lps ?? ""} onChange={(e) => set({ lps: e.target.value === "" ? null : Number(e.target.value) })} />
               </Field>
