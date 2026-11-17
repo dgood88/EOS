@@ -866,3 +866,7 @@ button.hero:active{transform:scale(.99);} button.hero{transition:transform .15s 
 .xfer-list{display:flex;flex-direction:column;margin-bottom:8px;}
 .xfer-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-top:1px solid var(--line);}
 .xfer-row span:first-child{font-weight:600;}
+
+/* loyalty predictor */
+.sale-badge.warn{background:rgba(242,166,90,.16);color:var(--orange);}
+.pred-how{font-size:12.5px;line-height:1.5;color:var(--muted);background:var(--bg);border-radius:10px;padding:10px 12px;}

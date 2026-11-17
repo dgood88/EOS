@@ -692,6 +692,11 @@ export default function App() {
           changed = true;
         }
         // one-off: tracking "turned us around" starts with Spurs at home on 24 Oct 2026, who did.
+        if (!st.loyaltyPalace2627) {
+          fx = fx.map((f) => (f.season === "26-27" && f.venue === "A" && /palace/i.test(f.opposition || "") && f.competition === "Premier League" && f.loyaltySale == null) ? { ...f, loyaltySale: true } : f);
+          st = { ...st, loyaltyPalace2627: true };
+          changed = true;
+        }
         if (!st.mhlSpurs2627) {
           fx = fx.map((f) => (f.season === "26-27" && f.venue === "H" && f.date === "2026-10-24" && /spurs|tottenham/i.test(f.opposition || "") && f.turnedAround == null) ? { ...f, turnedAround: true } : f);
           st = { ...st, mhlSpurs2627: true };
@@ -1792,7 +1797,11 @@ function StatsView({ list, season, settings, setSettings }) {
 
   const leagueOrder = list.filter((f) => f.competition === "Premier League" && f.opposition && f.date).sort((a, b) => a.date < b.date ? -1 : 1);
   const gameNo = {}; leagueOrder.forEach((f, i) => (gameNo[f.id] = i + 1));
-  const pointsAtSale = (f) => f.saleDate ? lpStart + cupBonus + list.reduce((a, g) => a + ((g.date && g.date < f.saleDate && earnsLP(g)) ? (g.lps || 0) : 0), 0) : lpTotal;
+  const lpBase = lpStart + cupBonus;
+  const pointsAtSale = (f) => f.lpAtSale != null && f.lpAtSale !== "" ? Number(f.lpAtSale) : f.saleDate ? pointsBefore(list, f.saleDate, lpBase) : lpTotal;
+  const model = cutoffModel(list, lpBase);
+  const upcomingLoyalty = list.filter((f) => isLoyaltySale(f) && !hasCutoff(f) && f.date && f.date >= todayISOStats())
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
   // Only games actually sold on loyalty points — i.e. ones with a Batch 1 cut-off logged.
   // An allocation or sale date on its own doesn't put a game in here.
   const loyaltySales = list.filter(hasCutoff)
@@ -1893,13 +1902,15 @@ function StatsView({ list, season, settings, setSettings }) {
 
       <TransferTally list={list} season={season} />
 
+      <LoyaltyPredictor list={list} upcoming={upcomingLoyalty} base={lpBase} model={model} gameNo={gameNo} />
+
       {/* LOYALTY TICKET SALES */}
       <SectionTitle small>Loyalty ticket sales</SectionTitle>
       {loyaltySales.length === 0 ? (
         <div className="hint-card"><span className="hint-ic" aria-hidden><Ticket size={17} /></span><span>Add a Batch 1 points cut-off to any game sold on loyalty points and it shows here, with a tick if you'd have had the points by its sale date.</span></div>
       ) : (
         <div className="sale-list">
-          {loyaltySales.map((f) => <SaleRow key={f.id} f={f} gno={gameNo[f.id]} pas={pointsAtSale(f)} lpTotal={lpTotal} />)}
+          {loyaltySales.map((f) => <SaleRow key={f.id} f={f} gno={gameNo[f.id]} pas={pointsAtSale(f)} lpTotal={lpTotal} fromClub={f.lpAtSale != null && f.lpAtSale !== ""} />)}
         </div>
       )}
 
@@ -1970,6 +1981,161 @@ function StatsView({ list, season, settings, setSettings }) {
   );
 }
 function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Number(f.lpRequired) > 0; }
+
+/* ---------------- Loyalty points over time ----------------
+   26/27 rules: home points land when you tap in at the turnstile (match day); away points
+   land when you BUY the ticket. Aways go on sale roughly 3–4 weeks before the game. */
+const AWAY_SALE_LEAD_DAYS = 25;
+const BOUGHT = ["going", "sourced", "went"];
+function addDays(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function isoToday() { return new Date().toISOString().slice(0, 10); }
+// When this away game's tickets went (or go) on general sale: logged, else estimated.
+function awaySaleDate(f) { return f.saleDate || (f.date ? addDays(f.date, -AWAY_SALE_LEAD_DAYS) : null); }
+// The day a game's points land for whoever has it.
+function earnedOn(f) {
+  if (f.venue !== "A") return f.date || null;   // home, neutral or not known yet (cup rounds sit as N until drawn)
+  if (f.boughtOn) return f.boughtOn;
+  const est = awaySaleDate(f);
+  // marked as bought means it's already bought — it can't land in the future
+  if (BOUGHT.includes(f.attending) && est && est > isoToday()) return isoToday();
+  return est;
+}
+// Your points just before a given day (strictly before — buying on sale day doesn't count
+// towards that same sale).
+function pointsBefore(list, iso, base) {
+  return base + list.reduce((a, g) => { const e = earnsLP(g) && earnedOn(g); return a + (e && e < iso ? (g.lps || 0) : 0); }, 0);
+}
+// The most a never-miss fan with your carry-over could have had before that day: every home
+// game tapped into and every away bought. The cut-off is learnt as a share of this.
+function maxAvailableBefore(list, iso, base) {
+  return base + list.reduce((a, g) => { const e = g.lps != null && earnedOn(g); return a + (e && e < iso ? (g.lps || 0) : 0); }, 0);
+}
+function isLoyaltySale(f) { return f.venue !== "H" && (f.loyaltySale === true || hasCutoff(f)); }
+
+/* Learns from the season's logged loyalty sales: each cut-off as a share of the max available
+   on its sale date. With 4+ sales across different allocations it also learns how allocation
+   moves that share; until then it uses the spread of what's been seen, widened while the
+   sample is small. Returns null with nothing to learn from. */
+function cutoffModel(list, base) {
+  const today = isoToday();
+  const pts = list.filter((f) => hasCutoff(f) && f.saleDate && f.saleDate <= today)
+    .map((f) => { const max = maxAvailableBefore(list, f.saleDate, base); return max > 0 ? { f, r: Number(f.lpRequired) / max, alloc: f.allocation || null } : null; })
+    .filter(Boolean);
+  if (!pts.length) return null;
+  const rs = pts.map((p) => p.r);
+  const mean = rs.reduce((a, b) => a + b, 0) / rs.length;
+  const withA = pts.filter((p) => p.alloc > 0);
+  let fit = null;
+  if (withA.length >= 4) {
+    const xs = withA.map((p) => Math.log(p.alloc)), ys = withA.map((p) => p.r);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const sxx = xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+    if (sxx > 0.05) {
+      const b = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / sxx;
+      const resid = ys.map((y, i) => y - (my + b * (xs[i] - mx)));
+      const sd = Math.sqrt(resid.reduce((a, e) => a + e * e, 0) / Math.max(1, ys.length - 2));
+      fit = { mx, my, b, sd };
+    }
+  }
+  const lo = Math.min(...rs), hi = Math.max(...rs);
+  const pad = pts.length < 3 ? 0.08 : pts.length < 6 ? 0.04 : 0.02;   // wider while there's little to go on
+  return {
+    n: pts.length, pts, allocs: withA.map((p) => p.alloc),
+    ratioFor(alloc) {
+      if (fit && alloc > 0) {
+        const c = fit.my + fit.b * (Math.log(alloc) - fit.mx);
+        const w = Math.max(fit.sd * 1.5, 0.03);
+        return { mid: c, lo: c - w, hi: c + w, usesAlloc: true };
+      }
+      return { mid: mean, lo: lo - pad, hi: hi + pad, usesAlloc: false };
+    },
+  };
+}
+
+/* The prediction for one upcoming loyalty sale. */
+function predictSale(list, f, base, model) {
+  const today = isoToday();
+  const saleOn = f.saleDate || awaySaleDate(f);
+  const estimated = !f.saleDate;
+  const firm = pointsBefore(list, saleOn, base);
+  // home games before the sale you're down as Going for: points if you tap in
+  const homes = list.filter((g) => g.venue === "H" && g.attending === "going" && !g.result && g.date && g.date >= today && g.date < saleOn && g.lps);
+  const homePts = homes.reduce((a, g) => a + g.lps, 0);
+  // aways going on sale before then that you haven't bought: points if you do
+  const aways = list.filter((g) => g.venue === "A" && g.id !== f.id && !BOUGHT.includes(g.attending) && g.attending !== "cant" && g.lps && earnedOn(g) && earnedOn(g) >= today && earnedOn(g) < saleOn);
+  const awayPts = aways.reduce((a, g) => a + g.lps, 0);
+  const expected = firm + homePts;
+  let cut = null, verdict = "unknown";
+  if (model) {
+    const r = model.ratioFor(f.allocation);
+    const max = maxAvailableBefore(list, saleOn, base);
+    cut = { mid: Math.round(r.mid * max), lo: Math.round(r.lo * max), hi: Math.round(r.hi * max), max, usesAlloc: r.usesAlloc };
+    verdict = expected >= cut.hi ? "likely" : expected >= cut.lo ? "borderline" : (expected + awayPts >= cut.lo ? "needs" : "unlikely");
+  }
+  const smallerThanSeen = model && f.allocation > 0 && model.allocs.length && f.allocation < Math.min(...model.allocs) && !(cut && cut.usesAlloc);
+  return { saleOn, estimated, firm, homes, homePts, aways, awayPts, expected, cut, verdict, smallerThanSeen };
+}
+function todayISOStats() { return isoToday(); }
+
+/* Upcoming games sold on loyalty points: will you make Batch 1? Your side (points by the sale)
+   is worked out exactly; the cut-off is learnt from this season's logged sales, so it starts
+   rough and sharpens as more are logged. */
+function LoyaltyPredictor({ list, upcoming, base, model, gameNo }) {
+  const [open, setOpen] = useState(null);
+  if (!upcoming.length) return null;
+  const V = { likely: ["ok", "Looking good"], borderline: ["warn", "Borderline"], needs: ["warn", "Needs an away"], unlikely: ["no", "Unlikely"], unknown: ["pending", "No estimate yet"] };
+  return (
+    <>
+      <div className="sec-row"><SectionTitle small>Coming up on loyalty points</SectionTitle><span className="sec-aside">{model ? `learning from ${model.n} sale${model.n === 1 ? "" : "s"}` : "log a cut-off to start"}</span></div>
+      <div className="sale-list">
+        {upcoming.map((f) => {
+          const p = predictSale(list, f, base, model);
+          const [tone, label] = V[p.verdict];
+          const isOpen = open === f.id;
+          return (
+            <div key={f.id} className="sale-row">
+              <button className="sale-top" onClick={() => setOpen(isOpen ? null : f.id)} aria-expanded={isOpen}>
+                <div className="sale-line1">
+                  {gameNo[f.id] ? <span className="sale-gno font-mono">G{gameNo[f.id]}</span> : null}
+                  <span className="sale-opp font-disp">{f.opposition}</span>
+                  <span className="vchip v-A">A</span>
+                  <span className={`sale-badge ${tone}`}>{label}</span>
+                  <ChevronDown size={15} className="sale-chev" style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                </div>
+                <div className="sale-line2">
+                  on sale {p.estimated ? "~" : ""}{fmtDate(p.saleOn)}{p.estimated ? " (est.)" : ""} · you {p.homePts ? `${p.firm}→${p.expected}` : p.expected}{p.awayPts ? ` (+${p.awayPts} if you buy)` : ""}
+                  {p.cut ? ` · cut-off ~${p.cut.lo}–${p.cut.hi}` : ""}
+                </div>
+              </button>
+              {isOpen && (
+                <div className="sale-detail">
+                  <div className="sale-d-row"><span>Match</span><b>{fmtDate(f.date)}{f.allocation ? ` · ${f.allocation} tickets` : ""}</b></div>
+                  <div className="sale-d-row"><span>Tickets on sale</span><b>{fmtDate(p.saleOn)}{p.estimated ? " — estimated, 3–4 weeks out" : ""}</b></div>
+                  <div className="sale-d-row"><span>Your points banked by then</span><b>{p.firm}</b></div>
+                  {p.homes.length > 0 && <div className="sale-d-row"><span>+ tap in at home v {p.homes.map((g) => g.opposition).join(", ")}</span><b>+{p.homePts} → {p.expected}</b></div>}
+                  {p.aways.length > 0 && <div className="sale-d-row"><span>+ if you buy away at {p.aways.map((g) => g.opposition).join(", ")}</span><b>+{p.awayPts} → {p.expected + p.awayPts}</b></div>}
+                  {p.cut ? (
+                    <>
+                      <div className="sale-d-row"><span>Likely Batch 1 cut-off</span><b>{p.cut.lo}–{p.cut.hi} (best guess {p.cut.mid})</b></div>
+                      <div className="pred-how">
+                        A never-miss fan would have {p.cut.max} by then. {p.cut.usesAlloc
+                          ? `Allocation's taken into account, learnt from ${model.n} sales.`
+                          : `So far Batch 1 has needed ${model.pts.map((x) => `${Math.round(x.r * 100)}%`).join(" and ")} of that (${model.pts.map((x) => x.f.opposition).join(", ")}).`}
+                        {model.n < 3 ? " Only a couple of sales to learn from, so the range is wide." : ""}
+                        {p.smallerThanSeen ? " This allocation's smaller than any logged so far — lean to the top end." : ""}
+                      </div>
+                    </>
+                  ) : <div className="pred-how">Log the Batch 1 cut-off and sale date for this season's loyalty sales as they happen, and an estimate appears here.</div>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /* Away ticket transfers: the club allows a member to transfer away tickets to eligible
    members up to 6 times a season. A transfer = an away (non-home) game marked Sourcing
    with "Ticket transferred" ticked. Switching it off Sourcing stops it counting. */
@@ -2048,7 +2214,7 @@ function TurnedAround({ list, season }) {
 }
 /* Tap to open. The summary line wraps rather than truncating, and the full breakdown —
    allocation, cut-off, what you'd have had on the day — lives inside. */
-function SaleRow({ f, gno, pas, lpTotal }) {
+function SaleRow({ f, gno, pas, lpTotal, fromClub }) {
   const [open, setOpen] = useState(false);
   const req = f.lpRequired;
   const ok = req != null && pas >= req;
@@ -2070,7 +2236,7 @@ function SaleRow({ f, gno, pas, lpTotal }) {
           {f.saleDate ? `on sale ${fmtDate(f.saleDate)}` : "sale date TBC"}
           {f.allocation != null ? ` · ${f.allocation} tickets` : ""}
           {req != null ? ` · needs ${req} pts` : ""}
-          {req != null && f.saleDate ? ` · you'd have had ${pas}` : ""}
+          {req != null && f.saleDate ? (fromClub ? ` · you had ${pas}` : ` · you'd have had ${pas}`) : ""}
         </div>
       </button>
       {open && (
@@ -2081,7 +2247,7 @@ function SaleRow({ f, gno, pas, lpTotal }) {
           <div className="sale-d-row"><span>Tickets on sale</span><b>{f.saleDate ? fmtDate(f.saleDate) : "TBC"}</b></div>
           <div className="sale-d-row"><span>Away allocation</span><b>{f.allocation != null ? `${f.allocation} tickets` : "not logged"}</b></div>
           <div className="sale-d-row"><span>Batch 1 cut-off</span><b>{req != null ? `${req} points` : "not logged"}</b></div>
-          <div className="sale-d-row"><span>{f.saleDate ? "Your points that day" : "Your points today"}</span><b>{pas} pts</b></div>
+          <div className="sale-d-row"><span>{f.saleDate ? "Your points that day" : "Your points today"}</span><b>{pas} pts{fromClub ? " (from the club)" : f.saleDate ? " (worked out)" : ""}</b></div>
           {req != null && (
             <div className={`sale-verdict ${ok ? "ok" : "no"}`}>
               {ok ? `In range — ${pas - req} points to spare.` : `${req - pas} points short at that sale date.`}
@@ -2774,7 +2940,18 @@ function FixtureDetail({ fx, matchday, focus, transfersUsed = 0, onClose, onSave
   const pubs = (d.journal && d.journal.pubs) || [];
   const groundBeers = d.groundBeers || [];
   function setJ(patch) { setD((s) => ({ ...s, journal: { ...(s.journal || {}), ...patch } })); }
-  function set(patch) { setD((s) => ({ ...s, ...patch })); }
+  function set(patch) {
+    setD((s) => {
+      const n = { ...s, ...patch };
+      // Away points land when the ticket's bought, so note the day it was marked as bought.
+      if ("attending" in patch && n.venue !== "H") {
+        const was = BOUGHT.includes(s.attending), now = BOUGHT.includes(n.attending);
+        if (now && !was && !n.boughtOn) n.boughtOn = fx.boughtOn || isoToday();
+        if (!now && was) n.boughtOn = null;
+      }
+      return n;
+    });
+  }
   // score is composed from a base scoreline + how it was decided (90'/AET/pens)
   const initDec = parseDecider(fx.score);
   const initBase = (() => { const p = parseScore(fx.score); return p ? `${p[0]}-${p[1]}` : ""; })();
@@ -2912,6 +3089,16 @@ function FixtureDetail({ fx, matchday, focus, transfersUsed = 0, onClose, onSave
               <Field label={<span>Points earned <button className="auto-btn" onClick={autoLP}>auto</button></span>}>
                 <input type="number" className="inp font-mono" value={d.lps ?? ""} onChange={(e) => set({ lps: e.target.value === "" ? null : Number(e.target.value) })} />
               </Field>
+              {d.venue !== "H" && (
+                <div className="span2">
+                  <button className={`cup-toggle ${d.loyaltySale ? "on" : ""}`} onClick={() => set({ loyaltySale: !d.loyaltySale })} role="checkbox" aria-checked={!!d.loyaltySale}>
+                    <span className="cup-toggle-box">{d.loyaltySale && <Check size={14} />}</span>
+                    <span className="cup-toggle-txt"><b>Sold on loyalty points</b> — tick it and the Stats tab predicts whether you'll make Batch 1.</span>
+                  </button>
+                </div>
+              )}
+              {d.venue !== "H" && BOUGHT.includes(d.attending) && <Field label="Ticket bought on"><input type="date" className="inp font-mono" value={d.boughtOn || ""} onChange={(e) => set({ boughtOn: e.target.value })} /></Field>}
+              {d.venue !== "H" && (d.loyaltySale || hasCutoff(d)) && <Field label={<span>Your points on sale day <span className="fld-hint">from the club, if you have it</span></span>}><input type="number" className="inp font-mono" placeholder="worked out if blank" value={d.lpAtSale ?? ""} onChange={(e) => set({ lpAtSale: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
               {d.venue !== "H" && <Field label="Points needed (Batch 1)"><input type="number" className="inp font-mono" value={d.lpRequired ?? ""} onChange={(e) => set({ lpRequired: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
               {d.venue !== "H" && <Field label="Away allocation"><input type="number" className="inp font-mono" value={d.allocation ?? ""} onChange={(e) => set({ allocation: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
               {d.venue !== "H" && <Field label="Tickets on sale (date)"><input type="date" className="inp font-mono" value={d.saleDate || ""} onChange={(e) => set({ saleDate: e.target.value })} /></Field>}
