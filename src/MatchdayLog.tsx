@@ -2030,6 +2030,11 @@ function awaySaleDate(f) {
     const snapped = addDays(d, shift);
     if (snapped < f.date) d = snapped;
   }
+  // Tickets never go on sale at the weekend: Saturday -> the Friday before, Sunday -> the
+  // Monday after (or the Friday before if Monday would be match day or later).
+  const wd = new Date(d + "T12:00:00").getDay();
+  if (wd === 6) d = addDays(d, -1);
+  if (wd === 0) { const mon = addDays(d, 1); d = mon < f.date ? mon : addDays(d, -2); }
   return d;
 }
 // The day a game's points land for whoever has it.
