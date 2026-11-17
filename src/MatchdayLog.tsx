@@ -1984,7 +1984,8 @@ function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Nu
 
 /* ---------------- Loyalty points over time ----------------
    26/27 rules: home points land when you tap in at the turnstile (match day); away points
-   land when you BUY the ticket. Aways go on sale roughly 3–4 weeks before the game. */
+   land when you BUY the ticket. Aways sell out on the day they go on sale, so a ticket you
+   have was bought on its sale day. Aways go on sale roughly 3–4 weeks before the game. */
 const AWAY_SALE_LEAD_DAYS = 25;
 const BOUGHT = ["going", "sourced", "went"];
 function addDays(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
@@ -1994,9 +1995,8 @@ function awaySaleDate(f) { return f.saleDate || (f.date ? addDays(f.date, -AWAY_
 // The day a game's points land for whoever has it.
 function earnedOn(f) {
   if (f.venue !== "A") return f.date || null;   // home, neutral or not known yet (cup rounds sit as N until drawn)
-  if (f.boughtOn) return f.boughtOn;
-  const est = awaySaleDate(f);
-  // marked as bought means it's already bought — it can't land in the future
+  const est = awaySaleDate(f);                  // bought on the day it went on sale
+  // marked as bought means it's already gone on sale, whatever the estimate says
   if (BOUGHT.includes(f.attending) && est && est > isoToday()) return isoToday();
   return est;
 }
@@ -2940,18 +2940,7 @@ function FixtureDetail({ fx, matchday, focus, transfersUsed = 0, onClose, onSave
   const pubs = (d.journal && d.journal.pubs) || [];
   const groundBeers = d.groundBeers || [];
   function setJ(patch) { setD((s) => ({ ...s, journal: { ...(s.journal || {}), ...patch } })); }
-  function set(patch) {
-    setD((s) => {
-      const n = { ...s, ...patch };
-      // Away points land when the ticket's bought, so note the day it was marked as bought.
-      if ("attending" in patch && n.venue !== "H") {
-        const was = BOUGHT.includes(s.attending), now = BOUGHT.includes(n.attending);
-        if (now && !was && !n.boughtOn) n.boughtOn = fx.boughtOn || isoToday();
-        if (!now && was) n.boughtOn = null;
-      }
-      return n;
-    });
-  }
+  function set(patch) { setD((s) => ({ ...s, ...patch })); }
   // score is composed from a base scoreline + how it was decided (90'/AET/pens)
   const initDec = parseDecider(fx.score);
   const initBase = (() => { const p = parseScore(fx.score); return p ? `${p[0]}-${p[1]}` : ""; })();
@@ -3097,11 +3086,10 @@ function FixtureDetail({ fx, matchday, focus, transfersUsed = 0, onClose, onSave
                   </button>
                 </div>
               )}
-              {d.venue !== "H" && BOUGHT.includes(d.attending) && <Field label="Ticket bought on"><input type="date" className="inp font-mono" value={d.boughtOn || ""} onChange={(e) => set({ boughtOn: e.target.value })} /></Field>}
               {d.venue !== "H" && (d.loyaltySale || hasCutoff(d)) && <Field label={<span>Your points on sale day <span className="fld-hint">from the club, if you have it</span></span>}><input type="number" className="inp font-mono" placeholder="worked out if blank" value={d.lpAtSale ?? ""} onChange={(e) => set({ lpAtSale: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
               {d.venue !== "H" && <Field label="Points needed (Batch 1)"><input type="number" className="inp font-mono" value={d.lpRequired ?? ""} onChange={(e) => set({ lpRequired: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
               {d.venue !== "H" && <Field label="Away allocation"><input type="number" className="inp font-mono" value={d.allocation ?? ""} onChange={(e) => set({ allocation: e.target.value === "" ? null : Number(e.target.value) })} /></Field>}
-              {d.venue !== "H" && <Field label="Tickets on sale (date)"><input type="date" className="inp font-mono" value={d.saleDate || ""} onChange={(e) => set({ saleDate: e.target.value })} /></Field>}
+              {d.venue !== "H" && <Field label={<span>Tickets on sale (date) <span className="fld-hint">your away points count from this day</span></span>}><input type="date" className="inp font-mono" value={d.saleDate || ""} onChange={(e) => set({ saleDate: e.target.value })} /></Field>}
               <Field label="Cost (£)"><input type="number" className="inp font-mono" value={d.myCost ?? ""} onChange={(e) => set({ myCost: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
               <div className="span2 ed-note">Filled in from the club's 26/27 policy: <b>1</b> for Arsenal, Liverpool, Man City, Man Utd and Spurs (home or away), <b>3</b> for other league games, <b>5</b> for cup ties, <b>0</b> for the League Cup final and FA Cup semi/final. Home points land when you mark this <b>Was there</b>; away points count from buying the ticket, so they still stand if you pass it on.</div>
             </div>
