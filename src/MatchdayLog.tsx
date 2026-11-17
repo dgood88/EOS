@@ -600,6 +600,8 @@ function HalfStars({ value = 0, onChange, size = 19 }) {
 /* ============================== APP ============================== */
 export default function App() {
   const [fixtures, setFixtures] = useState([]);
+  // When aways go on sale, learnt from logged sale dates (used by every estimate below).
+  SALE_PATTERN = useMemo(() => learnSalePattern(fixtures), [fixtures]);
   const [settings, setSettings] = useState({ lpTargets: {}, title: "EVERY OTHER SATURDAY" });
   const [season, setSeason] = useState(null);
   const [tab, setTab] = useState("fixtures");
@@ -1986,12 +1988,50 @@ function hasCutoff(f) { return f.lpRequired != null && f.lpRequired !== "" && Nu
    26/27 rules: home points land when you tap in at the turnstile (match day); away points
    land when you BUY the ticket. Aways sell out on the day they go on sale, so a ticket you
    have was bought on its sale day. Aways go on sale roughly 3–4 weeks before the game. */
-const AWAY_SALE_LEAD_DAYS = 25;
+const AWAY_SALE_LEAD_DAYS = 25;   // fallback until there are logged sale dates to learn from
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/* Learns when aways go on sale from the sale dates logged so far: the median gap between
+   on-sale day and the match, and the usual weekday if most land on the same one. Prefers
+   that season's own sales (3+), else every season's, else the 25-day fallback. */
+function learnSalePattern(fixtures) {
+  const rows = fixtures.filter((f) => f.venue === "A" && f.date && f.saleDate && f.saleDate < f.date)
+    .map((f) => ({ season: f.season, lead: Math.round((new Date(f.date + "T12:00:00") - new Date(f.saleDate + "T12:00:00")) / 86400000), dow: new Date(f.saleDate + "T12:00:00").getDay() }))
+    .filter((r) => r.lead >= 3 && r.lead <= 90);
+  const summarise = (rs) => {
+    if (!rs.length) return null;
+    const leads = rs.map((r) => r.lead).sort((a, b) => a - b);
+    const mid = leads.length % 2 ? leads[(leads.length - 1) / 2] : Math.round((leads[leads.length / 2 - 1] + leads[leads.length / 2]) / 2);
+    const counts = {}; rs.forEach((r) => (counts[r.dow] = (counts[r.dow] || 0) + 1));
+    const [topDow, topN] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const dow = rs.length >= 3 && topN / rs.length >= 0.6 ? Number(topDow) : null;
+    return { lead: mid, min: leads[0], max: leads[leads.length - 1], dow, n: rs.length };
+  };
+  const all = summarise(rows);
+  const bySeason = {};
+  [...new Set(rows.map((r) => r.season))].forEach((se) => { const sm = summarise(rows.filter((r) => r.season === se)); if (sm && sm.n >= 3) bySeason[se] = sm; });
+  return { all, bySeason };
+}
+let SALE_PATTERN = { all: null, bySeason: {} };
+function salePatternFor(season) { return SALE_PATTERN.bySeason[season] || SALE_PATTERN.all || null; }
 const BOUGHT = ["going", "sourced", "went"];
 function addDays(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
 // When this away game's tickets went (or go) on general sale: logged, else estimated.
-function awaySaleDate(f) { return f.saleDate || (f.date ? addDays(f.date, -AWAY_SALE_LEAD_DAYS) : null); }
+function awaySaleDate(f) {
+  if (f.saleDate) return f.saleDate;
+  if (!f.date) return null;
+  const pat = salePatternFor(f.season);
+  let d = addDays(f.date, -(pat ? pat.lead : AWAY_SALE_LEAD_DAYS));
+  if (pat && pat.dow != null) {
+    // snap to the nearest usual sale weekday (±3 days), never on/after the match
+    const cur = new Date(d + "T12:00:00").getDay();
+    let shift = pat.dow - cur; if (shift > 3) shift -= 7; if (shift < -3) shift += 7;
+    const snapped = addDays(d, shift);
+    if (snapped < f.date) d = snapped;
+  }
+  return d;
+}
 // The day a game's points land for whoever has it.
 function earnedOn(f) {
   if (f.venue !== "A") return f.date || null;   // home, neutral or not known yet (cup rounds sit as N until drawn)
@@ -2110,7 +2150,12 @@ function LoyaltyPredictor({ list, upcoming, base, model, gameNo }) {
               {isOpen && (
                 <div className="sale-detail">
                   <div className="sale-d-row"><span>Match</span><b>{fmtDate(f.date)}{f.allocation ? ` · ${f.allocation} tickets` : ""}</b></div>
-                  <div className="sale-d-row"><span>Tickets on sale</span><b>{fmtDate(p.saleOn)}{p.estimated ? " — estimated, 3–4 weeks out" : ""}</b></div>
+                  <div className="sale-d-row"><span>Tickets on sale</span><b>{fmtDate(p.saleOn)}{p.estimated ? " — estimated" : ""}</b></div>
+                  {p.estimated && (() => { const pat = salePatternFor(f.season); return (
+                    <div className="pred-how">{pat
+                      ? `From the ${pat.n} sale date${pat.n === 1 ? "" : "s"} you've logged, aways go on sale about ${Math.round(pat.lead / 7 * 2) / 2} weeks before the game (${pat.min === pat.max ? `${pat.lead} days` : `${pat.min}–${pat.max} days, typically ${pat.lead}`})${pat.dow != null ? `, usually on a ${WEEKDAYS[pat.dow]}` : ""}. Log the real date when it's announced.`
+                      : "No sale dates logged yet, so this assumes 3–4 weeks before the game. Log sale dates as they're announced and it'll learn the pattern."}</div>
+                  ); })()}
                   <div className="sale-d-row"><span>Your points banked by then</span><b>{p.firm}</b></div>
                   {p.homes.length > 0 && <div className="sale-d-row"><span>+ tap in at home v {p.homes.map((g) => g.opposition).join(", ")}</span><b>+{p.homePts} → {p.expected}</b></div>}
                   {p.aways.length > 0 && <div className="sale-d-row"><span>+ if you buy away at {p.aways.map((g) => g.opposition).join(", ")}</span><b>+{p.awayPts} → {p.expected + p.awayPts}</b></div>}
